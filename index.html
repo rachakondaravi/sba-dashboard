@@ -842,39 +842,47 @@ const DAILY_HISTORY_KEY = "sba_daily_metrics_v1";
 let metricsChart = null;
 
 /* helper – set metric value + arrow */
-function setMetric(idBase, current, previous, format) {
-  const valueEl  = document.getElementById(idBase);
+function setMetric(idBase, current, previous, format){
+  const valueEl = document.getElementById(idBase);
   const changeEl = document.getElementById(idBase + "-change");
-  if (!valueEl || !changeEl) return;
+  if(!valueEl || !changeEl) return;
+
+  // ✅ SAFETY: force number conversion
+  current = Number(current);
+  previous = previous !== null && previous !== undefined ? Number(previous) : null;
 
   let display;
-  if (format === "currency") {
+  if(format === "currency"){
     display = "₹" + current.toLocaleString("en-IN");
-  } else if (format === "percent") {
+  } else if(format === "percent"){
     display = current.toFixed(2) + "%";
   } else {
     display = current.toLocaleString("en-IN");
   }
   valueEl.textContent = display;
 
-  if (previous === null || previous === undefined) {
+  // ✅ First time – no previous data
+  if(previous === null || isNaN(previous)){
     changeEl.textContent = "";
     changeEl.className = "metric-change";
     return;
   }
 
   const diff = current - previous;
-  if (Math.abs(diff) < 0.5) {
+
+  // ✅ STABLE CONDITION – PERFECT FIX
+  if(diff === 0){
     changeEl.textContent = "• stable";
     changeEl.className = "metric-change trend-neutral";
     return;
   }
 
   const up = diff > 0;
+
   let diffText;
-  if (format === "currency") {
+  if(format === "currency"){
     diffText = "₹" + Math.abs(diff).toLocaleString("en-IN");
-  } else if (format === "percent") {
+  } else if(format === "percent"){
     diffText = Math.abs(diff).toFixed(2) + " pts";
   } else {
     diffText = Math.abs(diff).toLocaleString("en-IN");
@@ -883,7 +891,6 @@ function setMetric(idBase, current, previous, format) {
   changeEl.textContent = (up ? "▲ " : "▼ ") + diffText;
   changeEl.className = "metric-change " + (up ? "trend-up" : "trend-down");
 }
-
 /* ==========================
    TOP CARDS – TODAY vs YESTERDAY
    + DAILY CHART
