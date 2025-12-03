@@ -501,6 +501,46 @@
       height:100%;
     }
 
+    /* 🔔 EXPIRY BANNER – SCROLLING */
+    .expiry-banner {
+      margin-top: 4px;
+      margin-bottom: 16px;
+      padding: 6px 0;
+      border-radius: 999px;
+      background: linear-gradient(90deg, #f97316, #ef4444);
+      color: #f9fafb;
+      display: none;          /* JS lo show chestam */
+      align-items: center;
+      overflow: hidden;
+      box-shadow: 0 10px 20px rgba(239,68,68,0.35);
+    }
+
+    .expiry-track {
+      display: inline-flex;
+      align-items: center;
+      gap: 20px;
+      white-space: nowrap;
+      animation: scrollLeft 40s linear infinite;
+    }
+
+    .expiry-title {
+      font-weight: 700;
+      padding-left: 16px;
+    }
+
+    .expiry-pill {
+      background: rgba(255,255,255,0.18);
+      border-radius: 999px;
+      padding: 3px 10px;
+      border: 1px solid rgba(255,255,255,0.4);
+    }
+
+    /* ✅ Scrolling right → left */
+    @keyframes scrollLeft {
+      from { transform: translateX(100%); }
+      to   { transform: translateX(-100%); }
+    }
+
     @media (max-width: 1200px) {
       .metrics-grid { grid-template-columns: repeat(3,minmax(0,1fr)); }
     }
@@ -573,6 +613,13 @@
       <button onclick="downloadExcel()" class="download-btn">⬇ Export Excel</button>
       <button onclick="downloadPDF()" class="download-btn secondary">⬇ Save as PDF</button>
       <button onclick="logout()" class="logout-btn">🚪 Logout</button>
+    </div>
+
+    <!-- 🔔 SCROLLING EXPIRY BANNER -->
+    <div class="expiry-banner" id="expiryBanner">
+      <div class="expiry-track" id="expiryTrack">
+        <span class="expiry-title">⚠ Ending in 3 Days:</span>
+      </div>
     </div>
 
     <!-- 🔝 METRIC CARDS -->
@@ -830,9 +877,10 @@ window.mediaMasterAgg = null;
 window.mediaDBAgg     = null;
 window.locationMapDB  = null;
 
-const DAILY_HISTORY_KEY = "sba_daily_metrics_v2";
+// 🔁 RECENT SESSIONS HISTORY (not by day)
+const SESSION_HISTORY_KEY = "sba_session_metrics_v1";
 let metricsChart = null;
-let mediaPieChart = null; //
+let mediaPieChart = null;
 
 /* ---------- METRIC CARD HELPER ---------- */
 function setMetric(idBase, current, previous, format){
@@ -880,7 +928,7 @@ function setMetric(idBase, current, previous, format){
   changeEl.className = "metric-change " + (up ? "trend-up" : "trend-down");
 }
 
-/* ---------- TOP CARDS + DAILY HISTORY ---------- */
+/* ---------- TOP CARDS + RECENT SESSIONS HISTORY ---------- */
 function updateTopCards() {
   if (!window.metricsMaster || !window.metricsDB) return;
 
@@ -895,23 +943,16 @@ function updateTopCards() {
 
   const bookingPct = totalUnits ? (bookedUnits / totalUnits) * 100 : 0;
 
-  // 🔄 read old history (new key v2)
-  let historyObj = {};
+  // 🔄 read old session history (array)
+  let historyArr = [];
   try {
-    historyObj = JSON.parse(localStorage.getItem(DAILY_HISTORY_KEY) || "{}");
+    historyArr = JSON.parse(localStorage.getItem(SESSION_HISTORY_KEY) || "[]");
+    if (!Array.isArray(historyArr)) historyArr = [];
   } catch {
-    historyObj = {};
+    historyArr = [];
   }
 
-  const today = new Date();
-  const todayKey = today.toISOString().slice(0, 10); // yyyy-mm-dd
-
-  // previous non-today record for change %
-  const keys = Object.keys(historyObj)
-    .filter(k => k < todayKey)
-    .sort();
-  const prevKey = keys.length ? keys[keys.length - 1] : null;
-  const prev = prevKey ? historyObj[prevKey] : null;
+  const prev = historyArr.length ? historyArr[historyArr.length - 1] : null;
 
   setMetric("m-total",      totalUnits,    prev ? prev.totalUnits     : null, "number");
   setMetric("m-booked",     bookedUnits,   prev ? prev.bookedUnits    : null, "number");
@@ -919,42 +960,46 @@ function updateTopCards() {
   setMetric("m-revenue",    totalRevenue,  prev ? prev.totalRevenue   : null, "currency");
   setMetric("m-percentage", bookingPct,    prev ? prev.bookingPct     : null, "percent");
 
-  // 🔐 store / overwrite today's values
-  historyObj[todayKey] = {
+  // 🆕 add this session
+  historyArr.push({
+    ts: Date.now(),
     totalUnits,
     bookedUnits,
     availableUnits,
     totalRevenue,
     bookingPct
-  };
-
-  // 7 rojulu history matrame pettadam (chart clean ga undadaniki)
-  const allKeys = Object.keys(historyObj).sort();
-  const keepKeys = allKeys.slice(-7); // last 7 days
-  const trimmed = {};
-  keepKeys.forEach(k => { trimmed[k] = historyObj[k]; });
-
-  localStorage.setItem(DAILY_HISTORY_KEY, JSON.stringify(trimmed));
-
-  renderMetricsChartFromDaily(trimmed);
-}
-
-function renderMetricsChartFromDaily(historyObj) {
-  const canvas = document.getElementById("metricsChart");
-  if (!canvas) return;
-
-  const keys = Object.keys(historyObj).sort();
-  if (!keys.length) return;
-
-  const labels = keys.map(k => {
-    const d = new Date(k + "T00:00:00");
-    return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
   });
 
-  const bookedArr = keys.map(k => Number(historyObj[k].bookedUnits || 0));
-  const availArr  = keys.map(k => Number(historyObj[k].availableUnits || 0));
-  const pctArr    = keys.map(k => Number(historyObj[k].bookingPct || 0));
-  const revArr    = keys.map(k => Number(historyObj[k].totalRevenue || 0));
+  // last 20 sessions matrame pettukundam
+  if (historyArr.length > 20) {
+    historyArr = historyArr.slice(-20);
+  }
+
+  localStorage.setItem(SESSION_HISTORY_KEY, JSON.stringify(historyArr));
+
+  renderMetricsChartFromSessions(historyArr);
+}
+
+/* ---------- RECENT SESSIONS CHART ---------- */
+function renderMetricsChartFromSessions(historyArr) {
+  const canvas = document.getElementById("metricsChart");
+  if (!canvas || !historyArr.length) return;
+
+  const labels = historyArr.map(item => {
+    const d = new Date(item.ts);
+    // day + time, recent sessions feel kosam
+    return d.toLocaleDateString("en-IN", {
+      day: "2-digit",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit"
+    });
+  });
+
+  const bookedArr = historyArr.map(r => Number(r.bookedUnits    || 0));
+  const availArr  = historyArr.map(r => Number(r.availableUnits || 0));
+  const pctArr    = historyArr.map(r => Number(r.bookingPct     || 0));
+  const revArr    = historyArr.map(r => Number(r.totalRevenue   || 0));
 
   const maxUnits = Math.max(...bookedArr, ...availArr, 0);
   const maxPct   = Math.max(...pctArr, 0);
@@ -1018,7 +1063,6 @@ function renderMetricsChartFromDaily(historyObj) {
       }
     },
     scales: {
-      // 🔹 Left axis – units (Booked + Available)
       yUnits: {
         type: "linear",
         position: "left",
@@ -1030,7 +1074,6 @@ function renderMetricsChartFromDaily(historyObj) {
           callback: val => Number(val).toLocaleString("en-IN")
         }
       },
-      // 🔹 Right axis – Booking %
       yPct: {
         type: "linear",
         position: "right",
@@ -1042,7 +1085,6 @@ function renderMetricsChartFromDaily(historyObj) {
           callback: val => val + "%"
         }
       },
-      // 🔹 Hidden axis – Revenue (for tooltip only)
       yRev: {
         type: "linear",
         position: "right",
@@ -1261,6 +1303,7 @@ function loadMasterTables() {
 
       if (window.locationMapDB) {
         buildCommonAreaCityMediaTable(window.locationMapDB);
+        buildExpiringBanner();
       }
     })
     .catch(err => console.error("Master Sheet Load Error:", err));
@@ -1583,6 +1626,118 @@ function getCell(row,...names){
   }
   return "";
 }
+// 🗓️ helper: parse DD/MM/YYYY or DD-MM-YYYY etc.
+function parseSheetDate(val) {
+  if (!val) return null;
+  const s = String(val).trim();
+  if (!s) return null;
+
+  // normal Date parse try
+  let d = new Date(s);
+  if (!isNaN(d.getTime())) return d;
+
+  const parts = s.split(/[\/\-\.]/);
+  if (parts.length === 3) {
+    let [dStr, mStr, yStr] = parts;
+    if (yStr.length === 2) yStr = "20" + yStr;
+    const day = parseInt(dStr, 10);
+    const mon = parseInt(mStr, 10) - 1;
+    const yr  = parseInt(yStr, 10);
+    d = new Date(yr, mon, day);
+    if (!isNaN(d.getTime())) return d;
+  }
+  return null;
+}
+
+/* 🔔 BUILD EXPIRY BANNER – Master sheet lo active + booked
+   end date next 3 days lopala unna clients */
+function buildExpiringBanner() {
+  const data = window.sheetData || [];
+  const bannerEl = document.getElementById("expiry-banner");
+  const itemsEl  = document.getElementById("expiry-items");
+  if (!data.length || !bannerEl || !itemsEl) return;
+
+  const today = new Date();
+  today.setHours(0,0,0,0);
+  const threeDaysAhead = new Date(today.getTime() + 3 * 24 * 60 * 60 * 1000);
+
+  const upcomingMap = {};
+
+  data.forEach(row => {
+    const status = String(
+      getCell(row, "Status", " Status", "STATUS")
+    ).toLowerCase().trim();
+    if (status !== "active") return;
+
+    const bStatus = String(
+      getCell(row, "Booking Status", "Booking status", " Booking Status")
+    ).toLowerCase().trim();
+    if (!(bStatus === "booked" || bStatus === "renewal pending")) return;
+
+    const client = String(
+      getCell(row, "Client name", "Client Name", "Client", "CLIENT")
+    ).trim() || "Unknown Client";
+
+    const endRaw = getCell(
+      row,
+      "End Date", "End date", " End Date", "Campaign End Date", "End_Date"
+    );
+    const endDate = parseSheetDate(endRaw);
+    if (!endDate) return;
+
+    endDate.setHours(0,0,0,0);
+
+    // only today .. next 3 days
+    if (endDate < today) return;
+    if (endDate > threeDaysAhead) return;
+
+    const city  = String(getCell(row, "City", " CITY")).trim();
+    const media = String(
+      getCell(row, "Media Type", "Media type", " Media Type")
+    ).trim();
+
+    const key = client + "|" + endDate.getTime();
+    if (!upcomingMap[key]) {
+      upcomingMap[key] = { client, endDate, city, media };
+    }
+  });
+
+  const upcoming = Object.values(upcomingMap).sort(
+    (a, b) => a.endDate - b.endDate
+  );
+
+  if (!upcoming.length) {
+    bannerEl.style.display = "none";
+    return;
+  }
+
+  itemsEl.innerHTML = "";
+  upcoming.slice(0, 8).forEach(item => {
+    const diffDays = Math.round(
+      (item.endDate.getTime() - today.getTime()) / (24 * 60 * 60 * 1000)
+    );
+    const dateLabel = item.endDate.toLocaleDateString("en-IN", {
+      day: "2-digit",
+      month: "short"
+    });
+
+    const pill = document.createElement("div");
+    pill.className = "expiry-pill";
+    let text = `${item.client} – ${dateLabel}`;
+    if (diffDays > 0) {
+      text += ` (in ${diffDays} day${diffDays !== 1 ? "s" : ""})`;
+    } else {
+      text += " (today)";
+    }
+    if (item.city || item.media) {
+      text += ` • ${item.city || ""}${item.city && item.media ? " / " : ""}${item.media || ""}`;
+    }
+    pill.textContent = text;
+    itemsEl.appendChild(pill);
+  });
+
+  bannerEl.style.display = "flex";
+}
 
 function loadDataBookingDashboard() {
   Promise.all([
@@ -1591,6 +1746,7 @@ function loadDataBookingDashboard() {
   ])
     .then(([dataRows,bookingRows])=>{
       buildDashboardFromDataBooking(dataRows,bookingRows);
+      updateExpiryBanner(bookingRows);
     })
     .catch(err=>console.error("DATA/BOOKING Load Error:",err));
 }
@@ -1807,6 +1963,91 @@ function buildDashboardFromDataBooking(dataRows, bookingRows) {
   });
 
   buildCommonAreaCityMediaTable(locationMap);
+}
+
+// 🔔 BOOKING SHEET BASED SCROLLING BANNER
+function updateExpiryBanner(bookingRows) {
+  const banner = document.getElementById("expiryBanner");
+  const track  = document.getElementById("expiryTrack");
+  if (!banner || !track) return;
+
+  // Title reset
+  track.innerHTML = `<span class="expiry-title" style="color:#000;">⚠ Ending / Ended Campaigns:</span>`;
+
+  const today = new Date();
+  today.setHours(0,0,0,0);
+
+  const threeDaysLater = new Date(today.getTime() + 3 * 24 * 60 * 60 * 1000);
+
+  let found = false;
+
+  // ✅ UNIQUE clients kosam
+  const seenClients = new Set();
+
+  bookingRows.forEach(row => {
+    const client = String(
+      getCell(row,"Client Name","Client"," Client Name")
+    ).trim();
+
+    const endRaw = getCell(row,"End Date","End date"," END DATE");
+
+    if (!client || !endRaw) return;
+
+    const endDate = new Date(endRaw);
+    if (isNaN(endDate.getTime())) return;
+
+    endDate.setHours(0,0,0,0);
+
+    // ✅ Condition:
+    //   - Already ended
+    //   - OR next 3 days lo ending
+    if (!(endDate <= threeDaysLater)) return;
+
+    // ✅ UNIQUE client only
+    const uniqueKey = client.toLowerCase();
+    if (seenClients.has(uniqueKey)) return;
+    seenClients.add(uniqueKey);
+
+    found = true;
+
+    const diffDays = Math.round(
+      (endDate.getTime() - today.getTime()) / (24*60*60*1000)
+    );
+
+    const formatted = endDate.toLocaleDateString("en-IN", {
+      day: "2-digit",
+      month: "short"
+    });
+
+    let statusText = "";
+    if (diffDays < 0) {
+      statusText = "❌ Ended";
+    } else if (diffDays === 0) {
+      statusText = "✅ Ending Today";
+    } else {
+      statusText = `⏳ In ${diffDays} day${diffDays>1?"s":""}`;
+    }
+
+    const pill = document.createElement("span");
+    pill.className = "expiry-pill";
+
+    // ✅ TEXT BLACK COLOR
+    pill.style.color = "#000";
+    pill.style.background = "rgba(255,255,255,0.85)";
+    pill.style.border = "1px solid #000";
+
+    pill.textContent = `${client} – ${formatted} (${statusText})`;
+    track.appendChild(pill);
+  });
+
+  // ✅ Speed auto adjust
+  const count = track.querySelectorAll(".expiry-pill").length;
+  if (count > 0) {
+    const duration = Math.max(30, count * 6);
+    track.style.animationDuration = duration + "s";
+  }
+
+  banner.style.display = found ? "flex" : "none";
 }
 
 /* ---------- COMBINED MEDIA TYPE TABLE + PIE ---------- */
