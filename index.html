@@ -507,12 +507,12 @@
       margin-bottom: 16px;
       padding: 6px 0;
       border-radius: 999px;
-      background: linear-gradient(90deg, #f97316, #ef4444);
-      color: #f9fafb;
-      display: none;          /* JS lo show chestam */
+      background: linear-gradient(90deg, #2563eb, #38bdf8); /* blue */
+      color: #0f172a;
+      display: none;
       align-items: center;
       overflow: hidden;
-      box-shadow: 0 10px 20px rgba(239,68,68,0.35);
+      box-shadow: 0 10px 20px rgba(37,99,235,0.35);
     }
 
     .expiry-track {
@@ -520,7 +520,7 @@
       align-items: center;
       gap: 20px;
       white-space: nowrap;
-      animation: scrollLeft 40s linear infinite;
+      animation: scrollLeft 10s linear infinite; /* slow */
     }
 
     .expiry-title {
@@ -529,13 +529,13 @@
     }
 
     .expiry-pill {
-      background: rgba(255,255,255,0.18);
+      background: rgba(255,255,255,0.9);
       border-radius: 999px;
       padding: 3px 10px;
-      border: 1px solid rgba(255,255,255,0.4);
+      border: 1px solid #000;
+      color: #000;
     }
 
-    /* ✅ Scrolling right → left */
     @keyframes scrollLeft {
       from { transform: translateX(100%); }
       to   { transform: translateX(-100%); }
@@ -618,7 +618,7 @@
     <!-- 🔔 SCROLLING EXPIRY BANNER -->
     <div class="expiry-banner" id="expiryBanner">
       <div class="expiry-track" id="expiryTrack">
-        <span class="expiry-title">⚠ Ending in 3 Days:</span>
+        <span class="expiry-title">⚠ Ending / Ended Campaigns:</span>
       </div>
     </div>
 
@@ -666,7 +666,7 @@
       </div>
     </div>
 
-    <!-- 🆕 MEDIA TYPE BOOKING PIE CHART (TOP) -->
+    <!-- MEDIA TYPE BOOKING PIE CHART -->
     <section>
       <section-header>
         <h2>Media Type Booking Share (Combined)</h2>
@@ -680,7 +680,7 @@
       </div>
     </section>
 
-    <!-- 📈 METRICS TREND CHART -->
+    <!-- METRICS TREND CHART -->
     <section>
       <section-header>
         <h2>Key Metrics Trend (Recent Sessions)</h2>
@@ -692,7 +692,7 @@
       </div>
     </section>
 
-    <!-- ========= COMBINED MEDIA TYPE ========= -->
+    <!-- COMBINED MEDIA TYPE -->
     <section>
       <section-header>
         <h2>Media Type Wise Booking – Combined (Master + DATA + BOOKING)</h2>
@@ -718,7 +718,7 @@
       </table>
     </section>
 
-    <!-- ========= MASTER TABLES ========= -->
+    <!-- MASTER TABLES -->
     <section>
       <section-header>
         <h2>City Wise Booking (Master Sheet)</h2>
@@ -786,7 +786,7 @@
       </table>
     </section>
 
-    <!-- ========= DATA + BOOKING ========= -->
+    <!-- DATA + BOOKING -->
     <section>
       <section-header>
         <h2>City Wise Bookings (DATA + BOOKING)</h2>
@@ -834,7 +834,7 @@
       </table>
     </section>
 
-    <!-- ✅ COMMON AREA – CITY & MEDIA (SCREENSHOT STYLE) -->
+    <!-- COMMON AREA – CITY & MEDIA -->
     <section>
       <section-header>
         <h2>Common Area Allotted – City & Media Type (Master + DATA + BOOKING)</h2>
@@ -881,6 +881,9 @@ window.locationMapDB  = null;
 const SESSION_HISTORY_KEY = "sba_session_metrics_v1";
 let metricsChart = null;
 let mediaPieChart = null;
+
+// 🆕 BOOKING rows cache – expiry banner kosam
+let bookingRowsCache = [];
 
 /* ---------- METRIC CARD HELPER ---------- */
 function setMetric(idBase, current, previous, format){
@@ -943,7 +946,6 @@ function updateTopCards() {
 
   const bookingPct = totalUnits ? (bookedUnits / totalUnits) * 100 : 0;
 
-  // 🔄 read old session history (array)
   let historyArr = [];
   try {
     historyArr = JSON.parse(localStorage.getItem(SESSION_HISTORY_KEY) || "[]");
@@ -960,7 +962,6 @@ function updateTopCards() {
   setMetric("m-revenue",    totalRevenue,  prev ? prev.totalRevenue   : null, "currency");
   setMetric("m-percentage", bookingPct,    prev ? prev.bookingPct     : null, "percent");
 
-  // 🆕 add this session
   historyArr.push({
     ts: Date.now(),
     totalUnits,
@@ -970,7 +971,6 @@ function updateTopCards() {
     bookingPct
   });
 
-  // last 20 sessions matrame pettukundam
   if (historyArr.length > 20) {
     historyArr = historyArr.slice(-20);
   }
@@ -987,7 +987,6 @@ function renderMetricsChartFromSessions(historyArr) {
 
   const labels = historyArr.map(item => {
     const d = new Date(item.ts);
-    // day + time, recent sessions feel kosam
     return d.toLocaleDateString("en-IN", {
       day: "2-digit",
       month: "short",
@@ -1303,8 +1302,10 @@ function loadMasterTables() {
 
       if (window.locationMapDB) {
         buildCommonAreaCityMediaTable(window.locationMapDB);
-        buildExpiringBanner();
       }
+
+      // Master load ayyaka banner update (Master + Booking)
+      updateExpiryBanner(bookingRowsCache || []);
     })
     .catch(err => console.error("Master Sheet Load Error:", err));
 }
@@ -1618,7 +1619,7 @@ function buildExecRevenueHyderabadExecMedia(
   });
 }
 
-/* ---------- DATA + BOOKING ---------- */
+/* ---------- DATA + BOOKING HELPERS ---------- */
 const num = v => Number(String(v || "0").replace(/[,₹]/g,"")) || 0;
 function getCell(row,...names){
   for(const n of names){
@@ -1626,13 +1627,11 @@ function getCell(row,...names){
   }
   return "";
 }
-// 🗓️ helper: parse DD/MM/YYYY or DD-MM-YYYY etc.
 function parseSheetDate(val) {
   if (!val) return null;
   const s = String(val).trim();
   if (!s) return null;
 
-  // normal Date parse try
   let d = new Date(s);
   if (!isNaN(d.getTime())) return d;
 
@@ -1649,108 +1648,26 @@ function parseSheetDate(val) {
   return null;
 }
 
-/* 🔔 BUILD EXPIRY BANNER – Master sheet lo active + booked
-   end date next 3 days lopala unna clients */
-function buildExpiringBanner() {
-  const data = window.sheetData || [];
-  const bannerEl = document.getElementById("expiry-banner");
-  const itemsEl  = document.getElementById("expiry-items");
-  if (!data.length || !bannerEl || !itemsEl) return;
-
-  const today = new Date();
-  today.setHours(0,0,0,0);
-  const threeDaysAhead = new Date(today.getTime() + 3 * 24 * 60 * 60 * 1000);
-
-  const upcomingMap = {};
-
-  data.forEach(row => {
-    const status = String(
-      getCell(row, "Status", " Status", "STATUS")
-    ).toLowerCase().trim();
-    if (status !== "active") return;
-
-    const bStatus = String(
-      getCell(row, "Booking Status", "Booking status", " Booking Status")
-    ).toLowerCase().trim();
-    if (!(bStatus === "booked" || bStatus === "renewal pending")) return;
-
-    const client = String(
-      getCell(row, "Client name", "Client Name", "Client", "CLIENT")
-    ).trim() || "Unknown Client";
-
-    const endRaw = getCell(
-      row,
-      "End Date", "End date", " End Date", "Campaign End Date", "End_Date"
-    );
-    const endDate = parseSheetDate(endRaw);
-    if (!endDate) return;
-
-    endDate.setHours(0,0,0,0);
-
-    // only today .. next 3 days
-    if (endDate < today) return;
-    if (endDate > threeDaysAhead) return;
-
-    const city  = String(getCell(row, "City", " CITY")).trim();
-    const media = String(
-      getCell(row, "Media Type", "Media type", " Media Type")
-    ).trim();
-
-    const key = client + "|" + endDate.getTime();
-    if (!upcomingMap[key]) {
-      upcomingMap[key] = { client, endDate, city, media };
-    }
-  });
-
-  const upcoming = Object.values(upcomingMap).sort(
-    (a, b) => a.endDate - b.endDate
-  );
-
-  if (!upcoming.length) {
-    bannerEl.style.display = "none";
-    return;
-  }
-
-  itemsEl.innerHTML = "";
-  upcoming.slice(0, 8).forEach(item => {
-    const diffDays = Math.round(
-      (item.endDate.getTime() - today.getTime()) / (24 * 60 * 60 * 1000)
-    );
-    const dateLabel = item.endDate.toLocaleDateString("en-IN", {
-      day: "2-digit",
-      month: "short"
-    });
-
-    const pill = document.createElement("div");
-    pill.className = "expiry-pill";
-    let text = `${item.client} – ${dateLabel}`;
-    if (diffDays > 0) {
-      text += ` (in ${diffDays} day${diffDays !== 1 ? "s" : ""})`;
-    } else {
-      text += " (today)";
-    }
-    if (item.city || item.media) {
-      text += ` • ${item.city || ""}${item.city && item.media ? " / " : ""}${item.media || ""}`;
-    }
-    pill.textContent = text;
-    itemsEl.appendChild(pill);
-  });
-
-  bannerEl.style.display = "flex";
-}
-
+/* ---------- DATA + BOOKING LOAD ---------- */
 function loadDataBookingDashboard() {
   Promise.all([
-    fetch(DATA_URL).then(r=>r.json()),
-    fetch(BOOKING_URL).then(r=>r.json())
+    fetch(DATA_URL).then(r => r.json()).catch(() => []),
+    fetch(BOOKING_URL).then(r => r.json()).catch(() => [])
   ])
-    .then(([dataRows,bookingRows])=>{
-      buildDashboardFromDataBooking(dataRows,bookingRows);
-      updateExpiryBanner(bookingRows);
+    .then(([dataRows, bookingRows]) => {
+      if (!Array.isArray(dataRows)) dataRows = [];
+      if (!Array.isArray(bookingRows)) bookingRows = [];
+
+      bookingRowsCache = bookingRows;
+      buildDashboardFromDataBooking(dataRows, bookingRowsCache);
+
+      // DATA + BOOKING load ayyaka banner update
+      updateExpiryBanner(bookingRowsCache);
     })
-    .catch(err=>console.error("DATA/BOOKING Load Error:",err));
+    .catch(err => console.error("DATA/BOOKING Load Error:", err));
 }
 
+/* ---------- DATA + BOOKING BUILD ---------- */
 function buildDashboardFromDataBooking(dataRows, bookingRows) {
   const locationMap = {};
 
@@ -1949,12 +1866,13 @@ function buildDashboardFromDataBooking(dataRows, bookingRows) {
           <td class="numeric">₹${medData.revenue.toLocaleString("en-IN")}</td>
         `;
 
-        if (html.includes(`rowspan="${rowsInArea}"`)){
+                if (html.includes(`rowspan="${rowsInArea}"`)){
           html += `
             <td rowspan="${rowsInArea}" class="numeric">${areaBookingPct}%</td>
             <td rowspan="${rowsInArea}" class="numeric">₹${areaData.revenue.toLocaleString("en-IN")}</td>
           `;
         }
+
 
         tr.innerHTML = html;
         areaBody.appendChild(tr);
@@ -1965,56 +1883,99 @@ function buildDashboardFromDataBooking(dataRows, bookingRows) {
   buildCommonAreaCityMediaTable(locationMap);
 }
 
-// 🔔 BOOKING SHEET BASED SCROLLING BANNER
+/* ---------- EXPIRY BANNER (MASTER + BOOKING) ---------- */
 function updateExpiryBanner(bookingRows) {
   const banner = document.getElementById("expiryBanner");
   const track  = document.getElementById("expiryTrack");
   if (!banner || !track) return;
 
-  // Title reset
+  const master = window.sheetData || [];
+  if (!master.length && (!Array.isArray(bookingRows) || !bookingRows.length)) {
+    banner.style.display = "none";
+    return;
+  }
+
   track.innerHTML = `<span class="expiry-title" style="color:#000;">⚠ Ending / Ended Campaigns:</span>`;
 
   const today = new Date();
   today.setHours(0,0,0,0);
 
   const threeDaysLater = new Date(today.getTime() + 3 * 24 * 60 * 60 * 1000);
+  const sevenDaysAgo   = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const all = [];
 
-  let found = false;
+  // MASTER SHEET – booked / renewal only, last 7 days past + next 3 days
+  master.forEach(row => {
+    const bStatus = String(
+      getCell(row, "Booking Status", "Booking status", " Booking Status")
+    ).toLowerCase().trim();
+    if (!(bStatus === "booked" || bStatus === "renewal pending")) return;
 
-  // ✅ UNIQUE clients kosam
-  const seenClients = new Set();
+    const client = String(
+      getCell(row, "Client name", "Client Name", "Client", "CLIENT")
+    ).trim() || "Unknown Client";
+
+    const endRaw = getCell(
+      row,
+      "End Date", "End date", " End Date", "Campaign End Date", "End_Date"
+    );
+    const endDate = parseSheetDate(endRaw);
+    if (!endDate) return;
+
+    endDate.setHours(0,0,0,0);
+    if (endDate < sevenDaysAgo || endDate > threeDaysLater) return;
+
+    const city  = String(getCell(row, "City", " CITY")).trim();
+    const media = String(
+      getCell(row, "Media Type", "Media type", " Media Type")
+    ).trim();
+
+    all.push({ client, endDate, city, media, source: "Master" });
+  });
+
+  // BOOKING SHEET – same window
+  if (!Array.isArray(bookingRows)) bookingRows = [];
 
   bookingRows.forEach(row => {
     const client = String(
       getCell(row,"Client Name","Client"," Client Name")
     ).trim();
-
     const endRaw = getCell(row,"End Date","End date"," END DATE");
-
     if (!client || !endRaw) return;
 
-    const endDate = new Date(endRaw);
-    if (isNaN(endDate.getTime())) return;
-
+    const endDate = parseSheetDate(endRaw);
+    if (!endDate) return;
     endDate.setHours(0,0,0,0);
 
-    // ✅ Condition:
-    //   - Already ended
-    //   - OR next 3 days lo ending
-    if (!(endDate <= threeDaysLater)) return;
+    if (endDate < sevenDaysAgo || endDate > threeDaysLater) return;
 
-    // ✅ UNIQUE client only
-    const uniqueKey = client.toLowerCase();
-    if (seenClients.has(uniqueKey)) return;
-    seenClients.add(uniqueKey);
+    const city  = String(getCell(row, "City", " CITY")).trim();
+    const media = String(
+      getCell(row, "Media Type", "Media type", " Media Type")
+    ).trim();
 
-    found = true;
+    all.push({ client, endDate, city, media, source: "Booking" });
+  });
+
+  if (!all.length) {
+    banner.style.display = "none";
+    return;
+  }
+
+  all.sort((a, b) => a.endDate - b.endDate);
+
+  const seen = new Set();
+
+  all.forEach(item => {
+    const key = item.client.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
 
     const diffDays = Math.round(
-      (endDate.getTime() - today.getTime()) / (24*60*60*1000)
+      (item.endDate.getTime() - today.getTime()) / (24 * 60 * 60 * 1000)
     );
 
-    const formatted = endDate.toLocaleDateString("en-IN", {
+    const dateLabel = item.endDate.toLocaleDateString("en-IN", {
       day: "2-digit",
       month: "short"
     });
@@ -2025,29 +1986,29 @@ function updateExpiryBanner(bookingRows) {
     } else if (diffDays === 0) {
       statusText = "✅ Ending Today";
     } else {
-      statusText = `⏳ In ${diffDays} day${diffDays>1?"s":""}`;
+      statusText = `⏳ In ${diffDays} day${diffDays>1 ? "s" : ""}`;
     }
 
     const pill = document.createElement("span");
     pill.className = "expiry-pill";
 
-    // ✅ TEXT BLACK COLOR
-    pill.style.color = "#000";
-    pill.style.background = "rgba(255,255,255,0.85)";
-    pill.style.border = "1px solid #000";
+    let text = `${item.client} – ${dateLabel} (${statusText})`;
+    if (item.city || item.media) {
+      text += ` • ${item.city || ""}${item.city && item.media ? " / " : ""}${item.media || ""}`;
+    }
 
-    pill.textContent = `${client} – ${formatted} (${statusText})`;
+    pill.textContent = text;
     track.appendChild(pill);
   });
 
-  // ✅ Speed auto adjust
   const count = track.querySelectorAll(".expiry-pill").length;
   if (count > 0) {
-    const duration = Math.max(30, count * 6);
+    const duration = Math.max(40, count * 8); // more items → slower
     track.style.animationDuration = duration + "s";
+    banner.style.display = "flex";
+  } else {
+    banner.style.display = "none";
   }
-
-  banner.style.display = found ? "flex" : "none";
 }
 
 /* ---------- COMBINED MEDIA TYPE TABLE + PIE ---------- */
@@ -2090,11 +2051,10 @@ function buildCombinedMediaTable() {
         </tr>`;
     });
 
-  /* 🆕 update pie chart from same combined data */
   renderMediaPieChart(combined);
 }
 
-/* 🆕 MEDIA TYPE BOOKING PIE CHART */
+/* MEDIA TYPE BOOKING PIE CHART */
 function renderMediaPieChart(combinedMap) {
   const canvas = document.getElementById("mediaPieChart");
   if (!canvas) return;
@@ -2150,7 +2110,7 @@ function renderMediaPieChart(combinedMap) {
   });
 }
 
-// ✅ COMMON AREA TABLE – MASTER + DATA/BOOKING COMBINED
+// COMMON AREA TABLE – MASTER + DATA/BOOKING
 function buildCommonAreaCityMediaTable(locationMap) {
   const body = document.querySelector("#tblCommonAreaCityMedia tbody");
   if (!body) return;
@@ -2159,7 +2119,6 @@ function buildCommonAreaCityMediaTable(locationMap) {
   const masterData = window.sheetData || [];
   if (!masterData.length) return;
 
-  /* ---- AREA LISTS (Master & DATA/BOOKING) ---- */
   const masterAreaSet = new Set();
   masterData.forEach(r => {
     const area = String(
@@ -2174,17 +2133,15 @@ function buildCommonAreaCityMediaTable(locationMap) {
     if (area) dbAreaSet.add(area);
   });
 
-  // ONLY common employees (area allotted)
   const commonAreas = new Set();
   dbAreaSet.forEach(a => {
     if (masterAreaSet.has(a)) commonAreas.add(a);
   });
   if (!commonAreas.size) return;
 
-  /* ---- COMBINED AGGREGATION (Master + DATA/BOOKING) ---- */
   const agg = {};
 
-  // 1) MASTER SIDE – each row = 1 unit
+  // Master side
   masterData.forEach(r => {
     const areaName = String(
       getCell(r, "Area Allotted", "Area allotted", " Area Allotted")
@@ -2239,7 +2196,7 @@ function buildCommonAreaCityMediaTable(locationMap) {
     }
   });
 
-  // 2) DATA + BOOKING SIDE – locationMap numbers add cheyyali
+  // DATA + BOOKING side
   Object.values(locationMap).forEach(loc => {
     const areaName = (loc.area || "Unknown").toString().trim();
     if (!commonAreas.has(areaName)) return;
@@ -2268,7 +2225,6 @@ function buildCommonAreaCityMediaTable(locationMap) {
     row.revenue += loc.revenue || 0;
   });
 
-  /* ---- GROUP BY AREA & RENDER (rowspan pattern) ---- */
   const areaGroups = {};
   Object.values(agg).forEach(r => {
     if (!areaGroups[r.area]) {
@@ -2305,7 +2261,6 @@ function buildCommonAreaCityMediaTable(locationMap) {
       const occ = r.total ? (r.booked / r.total) * 100 : 0;
       const tr = document.createElement("tr");
 
-      // Area Allotted (merged)
       if (idx === 0) {
         const tdArea = document.createElement("td");
         tdArea.rowSpan = span;
@@ -2346,7 +2301,6 @@ function buildCommonAreaCityMediaTable(locationMap) {
       tdRev.textContent = "₹" + r.revenue.toLocaleString("en-IN");
       tr.appendChild(tdRev);
 
-      // Total % & Total Revenue – area level, merged
       if (idx === 0) {
         const tdTP = document.createElement("td");
         tdTP.rowSpan = span;
